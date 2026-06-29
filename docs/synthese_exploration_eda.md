@@ -8,7 +8,7 @@
 
 ## 1. Contexte et périmètre
 
-Nous avons consolidé les données climatiques mensuelles **Météo-France (MENSQ)** pour la France métropolitaine, avec pour objectif final de **prédire la température moyenne mensuelle par département**, puis de l'afficher au niveau **régional** dans une plateforme interactive (Streamlit).
+Nous avons consolidé les données climatiques mensuelles **Météo-France (MENSQ)** pour la France métropolitaine. L'objectif est de **prédire la température moyenne mensuelle** et de l'afficher dans une plateforme interactive (Streamlit) : carte par borne, tableaux et graphiques filtrables par région / département / station.
 
 ### Données brutes chargées (exploration)
 
@@ -17,121 +17,134 @@ Nous avons consolidé les données climatiques mensuelles **Météo-France (MENS
 | Fichiers MENSQ | **189** (2 par département : historique + récent) |
 | Période brute | **1950 – 2026** |
 | Observations station × mois | **3 262 696** |
-| Stations météo | **9 405** |
+| Stations météo (brut) | **9 405** |
 | Départements couverts | **95** (métropole + Corse, **dont le 79**) |
 
 ### Livrable EDA — fichier source unique
 
-Après filtrage qualité **Q = 1**, enrichissement géographique et filtres finaux, un **seul fichier** est produit pour le feature engineering et la modélisation :
+Après filtrage qualité **Q = 1**, enrichissement géographique et filtres finaux, un **seul fichier** est produit pour le feature engineering, la modélisation et l'application :
 
 **`src/data/processed/climat_source.csv`**
 
 | Élément | Valeur |
 |---------|--------|
-| Granularité | **département × mois** |
+| Granularité | **station (NUM_POSTE) × mois** |
 | Période | **2001 – 2025** (filtre `annee > 2000`) |
+| Stations (bornes) | **2 336** |
 | Départements | **95** |
 | Régions | **13** |
-| Observations finales | **25 560** |
-| Couples département × année complets | **2 130** (12 mois avec TMM renseignée chaque mois) |
-| Colonnes | 19 (géo + calendrier + 12 variables météo) |
+| Observations finales | **334 500** |
+| Couples station × année complets | **27 875** (12 mois avec TMM renseignée chaque mois) |
+| Colonnes | **24** |
+
+**Colonnes principales :**
+`NUM_POSTE`, `nom_station`, `lat`, `lon`, `alti`, `code_departement`, `nom_departement`, `code_region`, `nom_region`, `annee`, `mois`, `date`, + 12 variables météo.
 
 **Filtres appliqués :**
 - Code qualité Météo-France **Q = 1** uniquement (valeurs certifiées)
-- Agrégation par **moyenne des stations** du département
+- **Pas d'agrégation départementale** : chaque ligne conserve son identifiant **NUM_POSTE**
 - Fusion du référentiel `referentiel_geo_departements.csv` (régions)
 - **Après 2000** : `annee > 2000`
-- **Séries complètes** : 12 mois par département et par année, avec `temp_moy_mensuelle` non nulle sur chaque mois
+- **Séries complètes** : 12 mois par **NUM_POSTE** et par année, avec `temp_moy_mensuelle` non nulle sur chaque mois
+
+> **Pourquoi ~334 500 lignes et non ~25 000 ?**  
+> L'ancienne version (~25 560 lignes) était agrégée au niveau **département × mois** (moyenne des stations). La version actuelle conserve le détail **borne par borne**, nécessaire pour l'app (tableaux par station, carte avec coordonnées GPS). Une vue départementale peut être obtenue par agrégation : `groupby(['code_departement', 'annee', 'mois']).mean()`.
 
 ---
 
 ## 2. Principaux constats de l'analyse exploratoire
 
-*Statistiques ci-dessous calculées sur `climat_source.csv` (2001–2025).*
+*Statistiques ci-dessous calculées sur `climat_source.csv` (2001–2025, niveau station).*
 
 ### 2.1 Température — vue d'ensemble
 
-- Température moyenne mensuelle nationale : **11,6 °C** (écart-type **6,0 °C**)
+- Température moyenne mensuelle (toutes stations) : **11,6 °C** (écart-type **6,4 °C**)
 - Saisonnalité marquée :
   - Hiver : **4,6 °C**
-  - Printemps : **10,7 °C**
-  - Été : **19,1 °C**
-  - Automne : **12,0 °C**
+  - Printemps : **10,6 °C**
+  - Été : **19,2 °C**
+  - Automne : **12,1 °C**
 
 ### 2.2 Tendance climatique (changement climatique)
 
-- Tendance linéaire observée : **+0,035 °C / an** sur la période 2001–2025
-- Moyenne annuelle nationale :
-  - **2001** : **11,1 °C**
-  - **2010–2019** : **11,4 °C**
-- **Interprétation** : réchauffement mesurable sur la fenêtre récente. La variable `trend_index` reste pertinente comme feature ML.
+- Tendance linéaire observée au niveau station : **−0,012 °C / an** sur 2001–2025 (signal plus hétérogène qu'en agrégation départementale)
+- Moyenne annuelle (moyenne des stations par an) :
+  - **2001** : **11,7 °C**
+  - **2010–2019** : **11,3 °C**
+- **Interprétation** : la tendance globale est plus lisible en agrégant par département ou par année pour le data storytelling. La variable `trend_index` reste pertinente comme feature ML.
 
-> **Note** : l'historique brut remonte à 1950, mais le livrable modélisation est volontairement restreint à **post-2000** pour garantir la qualité et la complétude des séries.
+> **Note** : l'historique brut remonte à 1950, mais le livrable est restreint à **post-2000** pour garantir la qualité et la complétude des séries.
 
 ### 2.3 Disparités territoriales
 
-**Régions les plus chaudes** (moyenne 2001–2025) :
-- Corse (~14,7 °C)
+**Régions les plus chaudes** (moyenne des stations, 2001–2025) :
+- Corse (~14,9 °C)
+- Provence-Alpes-Côte d'Azur (~12,6 °C)
 - Nouvelle-Aquitaine (~12,6 °C)
-- Pays de la Loire (~12,3 °C)
 
 **Départements les plus chauds** :
+- Corse-du-Sud (~14,9 °C)
+- Bouches-du-Rhône (~14,8 °C)
 - Var (~14,7 °C)
-- Bouches-du-Rhône (~14,7 °C)
-- Corse-du-Sud (~14,7 °C)
 
 **Départements les plus froids** :
-- Savoie (~6,9 °C)
-- Hautes-Alpes (~7,6 °C)
-- Haute-Savoie (~8,4 °C)
+- Savoie (~7,5 °C)
+- Hautes-Alpes (~7,7 °C)
+- Haute-Savoie (~8,7 °C)
 
-→ Fort contraste **littoral méditerranéen / massifs montagneux**, à prendre en compte pour la modélisation (effet altitude, latitude).
+→ Fort contraste **littoral méditerranéen / massifs montagneux** ; l'altitude (`alti`) et la latitude sont des features géographiques pertinentes au niveau station.
 
 ### 2.4 Précipitations
 
-- Moyenne nationale : **~76 mm / mois**
-- Corrélation modérée avec la température (**r ≈ −0,18**) : les mois chauds ne sont pas systématiquement les plus secs au niveau mensuel agrégé.
+- Moyenne : **~75 mm / mois**
+- Corrélation faible avec la température (**r ≈ −0,17**)
 
 ### 2.5 Matrice de corrélation — enseignements clés
 
 | Variable | Corrélation avec `temp_moy_mensuelle` | Implication |
 |----------|---------------------------------------|-------------|
-| `temp_max` | **+0,99** | Très redondant avec la cible → risque de fuite d'information |
+| `temp_max` | **+0,98** | Très redondant avec la cible → risque de fuite d'information |
 | `temp_min` | **+0,98** | Idem |
-| `insolation` | **+0,78** | Feature pertinente (mais 34 % de manquants) |
-| `humidite` | **−0,59** | Feature pertinente (relation inverse, 55 % de manquants) |
-| `vent_moyen` | **−0,24** | Signal faible mais exploitable |
-| `precipitations_mm` | **−0,18** | Signal faible seul |
+| `insolation` | **+0,78** | Feature pertinente (mais ~89 % de manquants au niveau station) |
+| `humidite` | **−0,57** | Feature pertinente (relation inverse, ~80 % de manquants) |
+| `vent_moyen` | **−0,13** | Signal faible |
+| `precipitations_mm` | **−0,17** | Signal faible seul |
 
-**Point d'attention ML** : inclure `temp_max` et `temp_min` du **même mois** dans un modèle prédictif de la température moyenne mensuelle revient presque à « tricher ». Il faudra utiliser des **lags** (mois précédents) ou exclure ces variables du mois courant.
+**Point d'attention ML** : inclure `temp_max` et `temp_min` du **même mois** revient presque à « tricher ». Utiliser des **lags** (mois précédents) ou exclure ces variables du mois courant.
 
 ### 2.6 Qualité et complétude des données
 
-| Variable | Taux de manquants (`climat_source.csv`) |
-|----------|----------------------------------------|
+| Variable | Taux de manquants (niveau station) |
+|----------|--------------------------------------|
 | `temp_moy_mensuelle` | **0 %** |
-| `precipitations_mm` | **0 %** |
-| `evapotranspiration` | **0 %** |
-| `vent_moyen` | **1,0 %** |
-| `rafale_max` | **1,1 %** |
-| `insolation` | **34,5 %** |
-| `rayonnement_global` | **37,1 %** |
-| `humidite` | **55,2 %** |
-| `pression_mer` | **57,5 %** |
+| `temp_moy_jour` | **0,1 %** |
+| `evapotranspiration` | **0,2 %** |
+| `precipitations_mm` | **2,1 %** |
+| `vent_moyen` | **48,4 %** |
+| `rafale_max` | **49,1 %** |
+| `humidite` | **79,8 %** |
+| `rayonnement_global` | **87,8 %** |
+| `insolation` | **89,0 %** |
+| `pression_mer` | **94,9 %** |
 
 **Points de vigilance :**
-- Départements **93** (72 obs), **92** (120 obs) et **94** (240 obs) : historiques plus courts après filtrage → prévisions moins fiables
-- Données **2025** : incluses si la série annuelle est complète (12 mois + TMM)
-- Département **79 (Deux-Sèvres)** : **présent** (récupéré depuis la branche `aurelie`)
+- Certaines stations n'ont qu'**1 année complète** après filtrage (ex. 12 obs seulement) → séries trop courtes pour le ML
+- Médiane train par station : **~132 observations** (≈ 11 ans) — largement suffisant pour un modèle global
+- Données **2025** : incluses si la série annuelle de la station est complète
+- Département **79 (Deux-Sèvres)** : **présent**
 
 ### 2.7 Volume disponible pour le ML
 
 | Split temporel (exemple) | Observations |
 |--------------------------|--------------|
-| Train (`annee < 2018`) | **16 524** (~180 obs / dépt) |
-| Test (`annee ≥ 2018`) | **9 036** (~96 obs / dépt) |
+| Train (`annee < 2018`) | **184 836** |
+| Test (`annee ≥ 2018`) | **149 664** |
+| Stations dans le jeu | **2 336** |
+| Observations / station (médiane, train) | **~132** |
 
-→ Volume **suffisant** pour un **modèle global multi-départements** ; insuffisant pour 95 modèles séparés complexes.
+→ Volume **largement suffisant** pour un **modèle global multi-stations** (avec `NUM_POSTE` ou `code_departement` en feature). La prédiction peut se faire :
+- **par station** (fine, pour l'app borne par borne), ou
+- **par département** (agrégation des prédictions ou ré-agrégation des données)
 
 ---
 
@@ -141,11 +154,11 @@ Après filtrage qualité **Q = 1**, enrichissement géographique et filtres fina
 
 | Option | Pour | Contre |
 |--------|------|--------|
-| **A. Département** (recommandé) | Aligné avec le brief, 95 territoires, `climat_source.csv` prêt | Hétérogénéité intra-départementale |
-| B. Station (borne) | Plus précis localement | Non couvert par le livrable actuel ; volume et cartographie plus complexes |
-| C. Région seule | Simple, lisible | Perd le détail territorial demandé |
+| **A. Station (NUM_POSTE)** (livrable actuel) | Aligné avec l'app (bornes, GPS, tableaux détaillés), 334 k obs | Modèle plus complexe, hétérogénéité inter-stations |
+| **B. Département** (agrégation) | Simple, lisible, aligné brief initial | Perd le détail par borne ; nécessite une étape d'agrégation |
+| C. Région seule | Très simple | Perd le détail territorial |
 
-**Proposition** : modéliser au **département**, agréger en **région** pour l'affichage.
+**Proposition** : entraîner un **modèle global sur les stations** (`climat_source.csv`), afficher **par borne** dans l'app et proposer une **vue agrégée département / région** pour la carte choroplèthe.
 
 ---
 
@@ -162,26 +175,24 @@ Après filtrage qualité **Q = 1**, enrichissement géographique et filtres fina
 | **A. Lags mensuels M-1, M-2, M-3** | Rapide, données déjà prêtes ; approximation acceptable en hackathon |
 | B. Données journalières (Open-Meteo / autre API) | Respecte exactement les 28 jours ; travail d'acquisition supplémentaire |
 
-**Proposition court terme** : option **A** pour le MVP. Option **B** en phase 2 si le jury exige la contrainte exacte.
+**Proposition court terme** : option **A** pour le MVP.
 
 ---
 
 ### Décision 4 — Features à retenir pour le ML
 
 **À garder** :
-- Lags (1–3 mois) : température, précipitations, vent (humidité/insolation si complétude acceptable)
-- Features calendaires : mois, saison, trimestre, sin/cos du mois
+- Lags (1–3 mois) : température, précipitations
+- Features calendaires : mois, saison, sin/cos du mois
 - `trend_index` (tendance long terme)
-- Identifiant département (encodage ou modèle par groupe)
+- Identifiant **NUM_POSTE** ou `code_departement` (encodage)
+- Coordonnées : `lat`, `lon`, `alti` (effet géographique)
 
 **À exclure du mois courant** (fuite d'information) :
 - `temp_max`, `temp_min`, `temp_moy_jour` du mois à prédire
 
-**À utiliser avec prudence** (forts taux de manquants) :
-- `humidite`, `pression_mer`, `insolation`, `rayonnement_global`
-
-**À compléter via API externe** (si temps disponible) :
-- Couverture nuageuse, pression, éruptions solaires (NASA)
+**À utiliser avec prudence** (forts manquants au niveau station) :
+- `humidite`, `pression_mer`, `insolation`, `vent_moyen`, `rayonnement_global`
 
 ---
 
@@ -191,10 +202,10 @@ Après filtrage qualité **Q = 1**, enrichissement géographique et filtres fina
 |-------|---------------------|----------|
 | Pipeline données + EDA | **Samir — fait** | `01_exploration_donnees.ipynb` + `climat_source.csv` |
 | Feature engineering + ML | À attribuer | `02_modelisation_ml.ipynb` + modèle `.pkl` + `climat_predictions.csv` |
-| App Streamlit | À attribuer | Carte France, tableaux, graphiques (passé + futur) |
+| App Streamlit | À attribuer | Carte (lat/lon), tableaux par NUM_POSTE, graphiques |
 | Enrichissement données (pression, solaire) | À attribuer | Script d'acquisition + merge |
 | Déploiement local + doc | À attribuer | `README` déploiement, `requirements.txt` |
-| Data storytelling / slides | À attribuer | Présentation jury avec tendances + prévisions |
+| Data storytelling / slides | À attribuer | Présentation jury |
 
 ---
 
@@ -202,30 +213,29 @@ Après filtrage qualité **Q = 1**, enrichissement géographique et filtres fina
 
 ### Phase 1 — Court terme (MVP hackathon)
 
-- [x] Pipeline EDA et export `climat_source.csv`
+- [x] Pipeline EDA et export `climat_source.csv` (niveau station + NUM_POSTE)
 - [ ] Valider les décisions 1 à 4 en réunion équipe
 - [ ] Créer le notebook ML (`02_modelisation_ml.ipynb`) avec split temporel strict (train < 2018, test ≥ 2018)
-- [ ] Feature engineering (lags, calendrier, trend)
-- [ ] Corriger le risque de data leakage (retirer features du mois courant trop corrélées)
-- [ ] Choisir le modèle final (Random Forest / Gradient Boosting / XGBoost)
-- [ ] Prévision récursive 12–24 mois par département
+- [ ] Feature engineering (lags, calendrier, trend, lat/lon/alti)
+- [ ] Modèle global multi-stations (Random Forest / XGBoost)
+- [ ] Prévision récursive 12–24 mois par NUM_POSTE
 - [ ] Exporter `climat_predictions.csv` pour l'application
 
 ### Phase 2 — Visualisation (Streamlit)
 
-- [ ] Carte choroplèthe France : température observée vs prédite par département
-- [ ] Curseur année / mois (exploration passé + futur)
-- [ ] Tableau avec filtres région, département, période
-- [ ] Graphiques d'évolution des températures par département
+- [ ] Carte France avec points stations (`lat`, `lon`) ou choroplèthe départementale (agrégation)
+- [ ] Curseur année / mois (passé + futur)
+- [ ] Tableau par **NUM_POSTE** / nom_station avec filtres région, département, période
+- [ ] Graphiques d'évolution par station ou par département
 - [ ] Import du modèle (`.pkl`) ou des CSV (historique + prédictions)
 
 ### Phase 3 — Enrichissements (si temps)
 
 - [x] Récupérer les données du département 79
+- [x] Ajouter NUM_POSTE et coordonnées GPS des stations
 - [ ] Données journalières pour respecter les 28 jours
-- [ ] Données solaires (NASA) pour la feature « Solar Flares »
-- [ ] Matrice de corrélation par saison et par région (analyse complémentaire)
-- [ ] GeoJSON des départements pour la carte interactive
+- [ ] Données solaires (NASA)
+- [ ] GeoJSON des départements (vue agrégée carte)
 
 ### Phase 4 — Livraison
 
@@ -237,22 +247,22 @@ Après filtrage qualité **Q = 1**, enrichissement géographique et filtres fina
 
 ## 5. Messages clés pour la présentation jury
 
-1. **Données solides** : 25 ans d'historique qualité Q=1, **95 départements**, référentiel géographique intégré.
-2. **Signal climatique détecté** : +0,035 °C/an en moyenne nationale depuis 2001.
-3. **Fortes disparités territoriales** : écart de ~8 °C entre les départements les plus chauds et les plus froids.
-4. **Approche ML réaliste** : prédiction mensuelle par département (modèle global), avec features lag et saisonnalité ; prévision récursive sur 12–24 mois.
-5. **Application orientée citoyen** : plateforme Streamlit avec carte, tableaux et graphiques par région/département.
+1. **Données solides** : 334 500 observations qualité Q=1, **2 336 stations**, **95 départements**, coordonnées GPS intégrées.
+2. **Granularité adaptée à l'app** : chaque borne (`NUM_POSTE`) est identifiable pour cartes et tableaux interactifs.
+3. **Fortes disparités territoriales** : écart de ~7 °C entre stations/départements les plus chauds et les plus froids.
+4. **Approche ML réaliste** : modèle global multi-stations, features lag + saisonnalité + géographie ; prévision récursive 12–24 mois.
+5. **Application orientée citoyen** : plateforme Streamlit avec exploration passé/futur par région, département et borne météo.
 
 ---
 
 ## 6. Points ouverts — à trancher collectivement
 
-1. Accepte-t-on les **lags mensuels** comme proxy des 4 semaines, ou investit-on dans des **données journalières** ?
-2. Quel framework pour l'app : **Streamlit** (recommandé), Dash ou Plotly + HTML ?
-3. Quel membre prend le **ML**, l'**app**, l'**acquisition de données** ?
-4. Faut-il pousser l'analyse de corrélation **par saison / par région** avant de figer les features ?
-5. Quelles variables à fort taux de manquants (`humidite`, `pression_mer`) exclure du MVP ?
+1. Modélisation **par station** ou **par département** (avec agrégation) pour le jury ?
+2. Accepte-t-on les **lags mensuels** comme proxy des 4 semaines ?
+3. Quelles variables à fort taux de manquants exclure du MVP (`humidite`, `pression_mer`, `vent_moyen`) ?
+4. Carte : **points stations** (lat/lon) ou **choroplèthe départements** (agrégation) ?
+5. Répartition des rôles : ML, app Streamlit, slides ?
 
 ---
 
-*Document aligné sur `notebooks/01_exploration_donnees.ipynb` et `src/data/processed/climat_source.csv`.*
+*Document aligné sur `notebooks/01_exploration_donnees.ipynb` et `src/data/processed/climat_source.csv` (granularité station × mois).*
