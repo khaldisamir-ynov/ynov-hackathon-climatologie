@@ -8,6 +8,7 @@ __pycache__/
 dist/
 build/
 
+
 # Données volumineuses (ajuster selon le projet)
 *.parquet
 *.xlsx
