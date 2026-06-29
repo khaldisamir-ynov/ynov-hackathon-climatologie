@@ -1,0 +1,25 @@
+ 0 markdown # WeatherForYnov — Analyse exploratoire (SAMIR)  **Hackathon YNOV — Sujet 2 : Prévisions météorologi
+ 1 markdown ## 1. Configuration et imports
+ 2 code     from pathlib import Path import re import gc import warnings from collections import Counter, defaul
+ 3 markdown ## 2. Chargement des fichiers MENSQ  Convention : `MENSQ_{code_dept}_{periode}.csv` — chaque ligne =
+ 4 code     USECOLS = ["NUM_POSTE", "NOM_USUEL", "LAT", "LON", "ALTI", "AAAAMM"] + sorted(     {c for pair in VA
+ 5 markdown ## 3. Analyse exploratoire des données brutes  Vue d'ensemble : dimensions, aperçu des premières lig
+ 6 code     print("=== Synthèse du chargement ===") display(load_summary.to_frame())  print("\nAperçu brut (1er 
+ 7 markdown ## 4. Description des variables retenues  | Variable MENSQ | Code qualité | Nom retenu | Unité | Des
+ 8 code     print("Part des observations avec code qualité = 1 :") display((q1_share * 100).round(1).to_frame("%
+ 9 markdown ## 5. Nettoyage — filtrage qualité Q = 1  Les données douteuses sont exclues : seules les valeurs do
+10 code     print(f"Jeu station × mois : {len(station_monthly):,} lignes") print(f"Stations uniques : {station_m
+11 markdown ## 6. Référentiel géographique et fusion  Le référentiel `referentiel_geo_departements.csv` associe 
+12 code     geo = pd.read_csv(GEO_PATH, sep=";") geo["code_departement"] = geo["code_departement"].astype(str).s
+13 markdown ## 7. Filtres finaux  1. **Après 2000** : `annee > 2000` 2. **Séries complètes** : chaque couple **N
+14 code     post2000 = station_monthly[station_monthly["annee"] > 2000].copy() print(f"Lignes après 2000 : {len(
+15 markdown ## 8. Description du jeu filtré  Statistiques descriptives et taux de valeurs manquantes sur le data
+16 code     print("=== Aperçu statistique ===") display(final_df[list(VARIABLES.keys())].describe().round(2))  p
+17 markdown ## 9. Graphiques — séries temporelles  Visualisations sur le jeu filtré : tendance nationale, saison
+18 code     national = (     final_df.groupby("date")["temp_moy_mensuelle"]     .mean()     .reset_index(name="t
+19 code     seasonal = final_df.groupby("mois")["temp_moy_mensuelle"].agg(["mean", "std"]).reset_index() month_l
+20 code     regional = (     final_df.groupby(["nom_region", "annee"])["temp_moy_mensuelle"]     .mean()     .re
+21 code     sample = final_df[final_df["NUM_POSTE"] == final_df["NUM_POSTE"].iloc[0]].copy() label = f"{sample['
+22 code     corr_cols = [c for c in VARIABLES if final_df[c].notna().sum() > 100] corr = final_df[corr_cols].cor
+23 markdown ## 10. Export — fichier source unique  Ce fichier CSV constitue la **source unique** pour l'étape de
+24 code     final_df.to_csv(EXPORT_CSV, index=False)  print(f"Dataset exporté : {EXPORT_CSV}") print(f"Dimension
