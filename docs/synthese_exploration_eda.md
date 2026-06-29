@@ -47,9 +47,6 @@ Après filtrage qualité **Q = 1**, enrichissement géographique et filtres fina
 - **Après 2000** : `annee > 2000`
 - **Séries complètes** : 12 mois par **NUM_POSTE** et par année, avec `temp_moy_mensuelle` non nulle sur chaque mois
 
-> **Pourquoi ~334 500 lignes et non ~25 000 ?**  
-> L'ancienne version (~25 560 lignes) était agrégée au niveau **département × mois** (moyenne des stations). La version actuelle conserve le détail **borne par borne**, nécessaire pour l'app (tableaux par station, carte avec coordonnées GPS). Une vue départementale peut être obtenue par agrégation : `groupby(['code_departement', 'annee', 'mois']).mean()`.
-
 ---
 
 ## 2. Principaux constats de l'analyse exploratoire
