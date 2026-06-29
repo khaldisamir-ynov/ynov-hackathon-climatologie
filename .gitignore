@@ -1,0 +1,35 @@
+# Environnements Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Données volumineuses (ajuster selon le projet)
+*.csv
+*.parquet
+*.xlsx
+data/raw/
+data/processed/
+
+# Secrets
+.env
+.env.*
+*.pem
+credentials.json
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
