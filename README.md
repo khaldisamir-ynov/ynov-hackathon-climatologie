@@ -10,7 +10,7 @@ Ce projet regroupe le code, les analyses et la documentation produits par l'équ
 
 ```bash
 # Cloner le dépôt
-git clone https://github.com/VOTRE_ORGANISATION/ynov-hackathon-climatologie.git
+git clone https://github.com/khaldisamir-ynov/ynov-hackathon-climatologie.git
 cd ynov-hackathon-climatologie
 
 # Créer une branche pour votre travail
