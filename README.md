@@ -15,6 +15,16 @@ cd ynov-hackathon-climatologie
 
 # Créer une branche pour votre travail
 git checkout -b feature/nom-de-votre-feature
+
+# Lancer l'application (via Docker)
+
+ cd ynov-hackathon-climatologie
+ docker compose up --build -d
+ docker compose logs import-data -f (cela peut prendre quelques minutes)
+
+Pour voir la progression du chargement des données (3M-environ) ouvrir un nouveau terminal et faire :
+ docker compose exec db psql -U clima -d climafrance -c "SELECT COUNT(*) FROM historic_weather;"
+
 ```
 
 ## Organisation du travail
