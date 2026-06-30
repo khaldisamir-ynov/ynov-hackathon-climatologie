@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.idea/
+.env
+*.egg-info/
+dist/
+build/
+.DS_Store
+Data/
+models/
+*.ipynb
+ynov-hackathon-climatologie/
