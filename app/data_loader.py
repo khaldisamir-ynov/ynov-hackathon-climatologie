@@ -112,61 +112,142 @@ def get_db_connection():
         return None
 
 
-@st.cache_data(show_spinner="Chargement des donnees historiques...", ttl=300)
+def _get_row_count(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM historic_weather")
+    count = cur.fetchone()[0]
+    cur.close()
+    return count
+
+
+CHUNK_SIZE = 200_000
+
+
 def load_historic_data():
+    return load_all_data()
+
+
+def load_predictions():
+    if "_predictions_cache" in st.session_state:
+        return st.session_state["_predictions_cache"]
+
     conn = get_db_connection()
     if conn is None:
-        return _generate_mock_data()
+        return pd.DataFrame()
+
+    progress_text = st.empty()
+    progress_bar = st.empty()
 
     try:
+        progress_text.markdown("🔌 **Connexion** — chargement des predictions...")
+        progress_bar.progress(0.3)
+
         df = pd.read_sql(
-            "SELECT num_poste, nom_usuel, lat, lon, alti, dept, annee, mois, tm, tx, tn, rr "
-            "FROM historic_weather",
+            "SELECT num_poste, dept, annee, mois, tn_pred, tx_pred FROM predictions",
             conn,
         )
         conn.close()
 
-        if df.empty:
-            return _generate_mock_data()
+        progress_bar.progress(0.8)
 
-        df.columns = ["NUM_POSTE", "NOM_USUEL", "LAT", "LON", "ALTI", "DEPT", "ANNEE", "MOIS", "TM", "TX", "TN", "RR"]
-        df["DEPT"] = df["DEPT"].str.zfill(2)
-        df["DEPT_NOM"] = df["DEPT"].map(DEPT_NAMES).fillna("Inconnu")
-        df["REGION"] = df["DEPT"].map(DEPT_REGIONS).fillna("Autre")
-
-        for dept, (lat, lon) in DEPT_COORDS.items():
-            mask = (df["DEPT"] == dept) & (df["LAT"].isna())
-            df.loc[mask, "LAT"] = lat
-            df.loc[mask, "LON"] = lon
-
-        return df
-    except Exception as e:
-        if conn:
-            conn.close()
-        print(f"DB error: {e}")
-        return _generate_mock_data()
-
-
-@st.cache_data(show_spinner="Chargement des predictions...", ttl=300)
-def load_predictions():
-    conn = get_db_connection()
-    if conn is None:
-        return pd.DataFrame()
-
-    try:
-        df = pd.read_sql("SELECT * FROM predictions_2026", conn)
-        conn.close()
         if not df.empty:
             df["dept"] = df["dept"].str.zfill(2)
+            df["tm_pred"] = ((df["tn_pred"] + df["tx_pred"]) / 2).round(1)
+
+        progress_text.markdown(f"✅ **{len(df):,}** lignes de predictions chargees.")
+        progress_bar.progress(1.0)
+
+        import time
+        time.sleep(0.5)
+        progress_text.empty()
+        progress_bar.empty()
+
+        st.session_state["_predictions_cache"] = df
         return df
     except Exception:
         if conn:
             conn.close()
+        progress_text.empty()
+        progress_bar.empty()
         return pd.DataFrame()
 
 
 def load_all_data():
-    return load_historic_data()
+    if "_historic_cache" in st.session_state:
+        return st.session_state["_historic_cache"]
+
+    conn = get_db_connection()
+    if conn is None:
+        return _generate_mock_data()
+
+    progress_text = st.empty()
+    progress_bar = st.empty()
+
+    try:
+        progress_text.markdown("🔌 **Connexion a la base de donnees...**")
+        progress_bar.progress(0.0)
+
+        total = _get_row_count(conn)
+        if total == 0:
+            conn.close()
+            progress_text.empty()
+            progress_bar.empty()
+            return _generate_mock_data()
+
+        progress_text.markdown(f" **Chargement de {total:,} lignes** — 0%")
+        progress_bar.progress(0.05)
+
+        chunks = []
+        loaded = 0
+        for chunk in pd.read_sql(
+            "SELECT num_poste, nom_usuel, dept, annee, mois, tm, tx, tn "
+            "FROM historic_weather",
+            conn,
+            chunksize=CHUNK_SIZE,
+        ):
+            chunks.append(chunk)
+            loaded += len(chunk)
+            pct = min(loaded / total, 0.85)
+            progress_bar.progress(pct)
+            progress_text.markdown(
+                f" **Chargement** — {loaded:,} / {total:,} lignes ({int(pct*100)}%)"
+            )
+
+        conn.close()
+
+        progress_text.markdown("🔧 **Enrichissement des donnees** (noms, regions, coordonnees)...")
+        progress_bar.progress(0.90)
+
+        df = pd.concat(chunks, ignore_index=True)
+        df.columns = ["NUM_POSTE", "NOM_USUEL", "DEPT", "ANNEE", "MOIS", "TM", "TX", "TN"]
+        df["DEPT"] = df["DEPT"].str.zfill(2)
+        df["DEPT_NOM"] = df["DEPT"].map(DEPT_NAMES).fillna("Inconnu")
+        df["REGION"] = df["DEPT"].map(DEPT_REGIONS).fillna("Autre")
+        df["LAT"] = df["DEPT"].map(lambda d: DEPT_COORDS.get(d, (None, None))[0])
+        df["LON"] = df["DEPT"].map(lambda d: DEPT_COORDS.get(d, (None, None))[1])
+
+        progress_bar.progress(1.0)
+        progress_text.markdown(
+            f" **{len(df):,} lignes chargees** — "
+            f"{df['DEPT'].nunique()} departements, "
+            f"periode {int(df['ANNEE'].min())}-{int(df['ANNEE'].max())}"
+        )
+
+        import time
+        time.sleep(1.0)
+        progress_text.empty()
+        progress_bar.empty()
+
+        st.session_state["_historic_cache"] = df
+        return df
+
+    except Exception as e:
+        if conn:
+            conn.close()
+        print(f"DB error: {e}")
+        progress_text.empty()
+        progress_bar.empty()
+        return _generate_mock_data()
 
 
 MONTHLY_BASE_TEMP = {

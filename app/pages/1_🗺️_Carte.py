@@ -7,7 +7,7 @@ import urllib.request
 import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data_loader import load_all_data, DEPT_REGIONS
+from data_loader import load_all_data, DEPT_REGIONS, DEPT_NAMES
 from style import inject_css, page_header, sidebar_brand, COLORS
 
 GEOJSON_URL = "https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements.geojson"
@@ -120,6 +120,26 @@ if region != "Toutes":
 else:
     geo_filtered = geojson_data
 
+for feature in geo_filtered["features"]:
+    code = feature["properties"].get("code", "")
+    tm = temp_by_dept.get(code)
+    nom = nom_by_dept.get(code, feature["properties"].get("nom", ""))
+    if tm is not None:
+        tx = tx_by_dept.get(code, 0)
+        tn = tn_by_dept.get(code, 0)
+        reg = region_by_dept.get(code, "")
+        feature["properties"]["dept_label"] = f"{code} — {nom}"
+        feature["properties"]["region"] = reg
+        feature["properties"]["tm_display"] = f"🌡️ Moy : {tm:.1f}°C"
+        feature["properties"]["tx_display"] = f"🔴 Max : {tx:.1f}°C"
+        feature["properties"]["tn_display"] = f"🔵 Min : {tn:.1f}°C"
+    else:
+        feature["properties"]["dept_label"] = f"{code} — {nom}"
+        feature["properties"]["region"] = ""
+        feature["properties"]["tm_display"] = "Pas de donnees"
+        feature["properties"]["tx_display"] = ""
+        feature["properties"]["tn_display"] = ""
+
 
 def style_function(feature):
     code = feature["properties"].get("code", "")
@@ -148,48 +168,38 @@ def highlight_function(feature):
     }
 
 
+tooltip_style = (
+    "background-color: white;"
+    "border: 2px solid #1B6B93;"
+    "border-radius: 8px;"
+    "padding: 8px 12px;"
+    "font-family: sans-serif;"
+    "font-size: 13px;"
+    "font-weight: 500;"
+    "box-shadow: 0 2px 8px rgba(0,0,0,0.15);"
+    "color: #1A1A2E;"
+)
+
 geojson_layer = folium.GeoJson(
     geo_filtered,
     style_function=style_function,
     highlight_function=highlight_function,
     tooltip=folium.GeoJsonTooltip(
-        fields=["code", "nom"],
-        aliases=["Code :", "Departement :"],
-        style="font-family: sans-serif; font-size: 13px;",
+        fields=["dept_label", "region", "tm_display", "tx_display", "tn_display"],
+        aliases=["", "", "", "", ""],
+        style=tooltip_style,
+        sticky=True,
     ),
 )
-
-for feature in geojson_layer.data["features"]:
-    code = feature["properties"].get("code", "")
-    tm = temp_by_dept.get(code)
-    if tm is not None:
-        nom = nom_by_dept.get(code, feature["properties"].get("nom", ""))
-        reg = region_by_dept.get(code, "")
-        tx = tx_by_dept.get(code, 0)
-        tn = tn_by_dept.get(code, 0)
-        feature["properties"]["tooltip_text"] = (
-            f"{code} - {nom} | {tm:.1f}°C"
-        )
-
 geojson_layer.add_to(m)
 
 for _, row in dept_agg.iterrows():
-    popup_html = (
-        f'<div style="font-family:sans-serif;font-size:13px;line-height:1.6;min-width:170px;">'
-        f'<b style="color:{COLORS["primary"]};font-size:14px;">{row["DEPT"]} - {row["DEPT_NOM"]}</b><br>'
-        f'<span style="color:#6B7280;font-size:11px;">{row["REGION"]}</span>'
-        f'<hr style="margin:5px 0;border-color:#E2E8F0">'
-        f'🌡️ Moyenne: <b>{row["TM"]:.1f}°C</b><br>'
-        f'🔴 Max: <b>{row["TX"]:.1f}°C</b><br>'
-        f'🔵 Min: <b>{row["TN"]:.1f}°C</b>'
-        f'</div>'
-    )
     folium.Marker(
         location=[row["LAT"], row["LON"]],
-        popup=folium.Popup(popup_html, max_width=240),
         icon=folium.DivIcon(
             html=f'<div style="font-size:10px;font-weight:700;color:#1A1A2E;'
-                 f'text-align:center;text-shadow:0 0 3px #fff,0 0 3px #fff;">'
+                 f'text-align:center;text-shadow:0 0 3px #fff,0 0 3px #fff;'
+                 f'pointer-events:none;">'
                  f'{row["TM"]:.0f}°</div>',
             icon_size=(36, 14),
             icon_anchor=(18, 7),

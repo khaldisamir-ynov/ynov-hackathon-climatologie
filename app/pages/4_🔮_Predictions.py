@@ -1,157 +1,179 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.graph_objects as go
-import os
-import pickle
-import sys
+import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from data_loader import load_all_data
+from data_loader import load_all_data, load_predictions, DEPT_NAMES
 from style import inject_css, page_header, sidebar_brand, COLORS
 
 st.set_page_config(page_title="Predictions - ClimaFrance", layout="wide", page_icon="🔮")
 inject_css()
 sidebar_brand()
 
-page_header("🔮 Predictions", "Prediction de temperature pour un departement et une date")
+page_header("🔮 Predictions 2026-2027", "Temperatures predites par departement pour 2026 et 2027")
 
 data = load_all_data()
+predictions = load_predictions()
+
 if data.empty:
-    st.error("Aucune donnee trouvee.")
+    st.error("Aucune donnee historique trouvee.")
     st.stop()
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
-model_path = os.path.join(MODEL_DIR, "model.pkl")
-model_available = os.path.exists(model_path)
+if predictions.empty:
+    st.warning("Aucune donnee de prediction trouvee en base.")
+    st.stop()
 
-dept_options = sorted(data["DEPT"].unique())
-dept_labels = {}
-for d in dept_options:
-    rows = data[data["DEPT"] == d]
-    if len(rows) > 0:
-        dept_labels[d] = f"{d} - {rows['DEPT_NOM'].iloc[0]}"
+MOIS_NOMS = {
+    1: "Jan", 2: "Fev", 3: "Mar", 4: "Avr", 5: "Mai", 6: "Jun",
+    7: "Jul", 8: "Aou", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+}
+
+pred_depts = sorted(predictions["dept"].unique())
+pred_years = sorted(predictions["annee"].unique())
+dept_labels = {d: f"{d} - {DEPT_NAMES.get(d, d)}" for d in pred_depts}
 
 st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
-col1, col2, col3 = st.columns([2, 2, 1])
+col1, col2 = st.columns([2, 1])
 with col1:
     dept = st.selectbox(
         "Departement",
-        options=dept_options,
+        options=pred_depts,
         format_func=lambda x: dept_labels.get(x, x),
-        index=dept_options.index("75") if "75" in dept_options else 0,
+        index=pred_depts.index("75") if "75" in pred_depts else 0,
     )
 with col2:
-    date_pred = st.date_input("Date de prediction", value=pd.Timestamp("2027-07-01"))
-with col3:
-    st.markdown("<br>", unsafe_allow_html=True)
-    predict_btn = st.button("🔮 Predire", type="primary", use_container_width=True)
+    annee = st.selectbox("Annee", options=pred_years, index=0)
 st.markdown('</div>', unsafe_allow_html=True)
 
+dept_preds = predictions[(predictions["dept"] == dept) & (predictions["annee"] == annee)]
 
-def predict_with_historical(dept_code, year, month):
-    dept_data = data[(data["DEPT"] == dept_code) & (data["MOIS"] == month)]
-    dept_data = dept_data.dropna(subset=["TM"])
-    if dept_data.empty:
-        return None, None, None
+pred_monthly = dept_preds.groupby("mois").agg(
+    tn=("tn_pred", "mean"),
+    tx=("tx_pred", "mean"),
+    tm=("tm_pred", "mean"),
+).reset_index().round(1)
+pred_monthly["mois_nom"] = pred_monthly["mois"].map(MOIS_NOMS)
+pred_monthly = pred_monthly.sort_values("mois")
 
-    yearly_avg = dept_data.groupby("ANNEE").agg(
-        TM=("TM", "mean"), TX=("TX", "mean"), TN=("TN", "mean")
-    ).reset_index()
+if pred_monthly.empty:
+    st.warning("Pas de predictions pour cette selection.")
+    st.stop()
 
-    if len(yearly_avg) < 5:
-        return None, None, None
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    st.metric(f"T° moy {annee}", f"{pred_monthly['tm'].mean():.1f}°C")
+with c2:
+    hottest = pred_monthly.loc[pred_monthly["tx"].idxmax()]
+    st.metric(f"Mois le + chaud ({hottest['mois_nom']})", f"{hottest['tx']:.1f}°C")
+with c3:
+    coldest = pred_monthly.loc[pred_monthly["tn"].idxmin()]
+    st.metric(f"Mois le + froid ({coldest['mois_nom']})", f"{coldest['tn']:.1f}°C")
+with c4:
+    st.metric("Amplitude annuelle", f"{pred_monthly['tx'].max() - pred_monthly['tn'].min():.1f}°C")
 
-    from numpy.polynomial import polynomial as P
-    x = yearly_avg["ANNEE"].values.astype(float)
+# --- Graphique 1 : Predictions mensuelles ---
+st.markdown(f"### Predictions mensuelles {annee}")
 
-    results = {}
-    for col in ["TM", "TX", "TN"]:
-        y = yearly_avg[col].dropna().values
-        x_clean = x[: len(y)]
-        if len(x_clean) < 5:
-            results[col] = None
-            continue
-        coeffs = P.polyfit(x_clean, y, deg=2)
-        results[col] = round(float(P.polyval(year, coeffs)), 1)
+fig = go.Figure()
 
-    return results.get("TM"), results.get("TX"), results.get("TN")
+fig.add_trace(go.Scatter(
+    x=pred_monthly["mois_nom"], y=pred_monthly["tx"],
+    name="T° max predite", mode="lines+markers",
+    line=dict(color=COLORS["warm"], width=2), marker=dict(size=6),
+))
+fig.add_trace(go.Scatter(
+    x=pred_monthly["mois_nom"], y=pred_monthly["tm"],
+    name="T° moy predite", mode="lines+markers",
+    line=dict(color=COLORS["amber"], width=2), marker=dict(size=6),
+))
+fig.add_trace(go.Scatter(
+    x=pred_monthly["mois_nom"], y=pred_monthly["tn"],
+    name="T° min predite", mode="lines+markers",
+    line=dict(color=COLORS["cold"], width=2), marker=dict(size=6),
+))
+fig.add_trace(go.Scatter(
+    x=pred_monthly["mois_nom"].tolist() + pred_monthly["mois_nom"].tolist()[::-1],
+    y=pred_monthly["tx"].tolist() + pred_monthly["tn"].tolist()[::-1],
+    fill="toself", fillcolor="rgba(212,101,74,0.1)",
+    line=dict(width=0), name="Intervalle min-max", showlegend=True,
+))
 
+fig.update_layout(
+    title=f"Temperatures predites {annee} - {dept_labels.get(dept, dept)}",
+    xaxis_title="Mois", yaxis_title="Temperature (°C)",
+    template="plotly_white", height=450, hovermode="x unified",
+)
+st.plotly_chart(fig, use_container_width=True)
 
-def predict_with_model(dept_code, year, month):
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
-    features = pd.DataFrame({"DEPT": [int(dept_code)], "ANNEE": [year], "MOIS": [month]})
-    pred = model.predict(features)
-    if hasattr(pred, "__len__") and len(pred[0]) >= 3:
-        return round(pred[0][0], 1), round(pred[0][1], 1), round(pred[0][2], 1)
-    return round(float(pred[0]), 1), None, None
+# --- Graphique 2 : Historique + predictions ---
+st.markdown("### Comparaison avec l'historique")
 
+hist_dept = data[data["DEPT"] == dept].dropna(subset=["TM"])
 
-if predict_btn:
-    year = date_pred.year
-    month = date_pred.month
+if not hist_dept.empty:
+    yearly = hist_dept.groupby("ANNEE").agg(
+        TM=("TM", "mean"), TX=("TX", "mean"), TN=("TN", "mean"),
+    ).reset_index().round(1).sort_values("ANNEE")
 
-    MOIS_NOMS = {
-        1: "Janvier", 2: "Fevrier", 3: "Mars", 4: "Avril", 5: "Mai", 6: "Juin",
-        7: "Juillet", 8: "Aout", 9: "Septembre", 10: "Octobre", 11: "Novembre", 12: "Decembre",
-    }
+    pred_yearly = predictions[predictions["dept"] == dept].groupby("annee").agg(
+        tm=("tm_pred", "mean"), tx=("tx_pred", "mean"), tn=("tn_pred", "mean"),
+    ).reset_index().round(1)
+    pred_yearly["annee"] = pred_yearly["annee"].astype(int)
+    pred_yearly = pred_yearly.sort_values("annee")
 
-    st.markdown(f"### Prediction pour {dept_labels.get(dept, dept)} - {MOIS_NOMS[month]} {year}")
+    fig2 = go.Figure()
 
-    if model_available:
-        tm, tx, tn = predict_with_model(dept, year, month)
-        st.info("Prediction effectuee avec le modele ML importe.")
-    else:
-        tm, tx, tn = predict_with_historical(dept, year, month)
-        st.info("Prediction basee sur la tendance historique (aucun modele ML importe).")
+    fig2.add_trace(go.Scatter(
+        x=yearly["ANNEE"], y=yearly["TX"],
+        name="T° max historique", mode="lines",
+        line=dict(color=COLORS["warm"], width=1.5), opacity=0.7,
+    ))
+    fig2.add_trace(go.Scatter(
+        x=yearly["ANNEE"], y=yearly["TM"],
+        name="T° moy historique", mode="lines",
+        line=dict(color=COLORS["amber"], width=1.5), opacity=0.7,
+    ))
+    fig2.add_trace(go.Scatter(
+        x=yearly["ANNEE"], y=yearly["TN"],
+        name="T° min historique", mode="lines",
+        line=dict(color=COLORS["cold"], width=1.5), opacity=0.7,
+    ))
 
-    if tm is None:
-        st.warning("Pas assez de donnees pour effectuer une prediction.")
-    else:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("Temperature moyenne", f"{tm}°C")
-        with c2:
-            if tx is not None:
-                st.metric("Temperature max", f"{tx}°C")
-        with c3:
-            if tn is not None:
-                st.metric("Temperature min", f"{tn}°C")
-
-        dept_data = data[(data["DEPT"] == dept) & (data["MOIS"] == month)].dropna(subset=["TM"])
-        yearly = dept_data.groupby("ANNEE")["TM"].mean().reset_index()
-        yearly = yearly.sort_values("ANNEE")
-
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=yearly["ANNEE"], y=yearly["TM"].round(1),
-            name="Historique", mode="lines+markers",
-            line=dict(color=COLORS["cold"], width=2),
-            marker=dict(size=3),
+    for i, row in pred_yearly.iterrows():
+        show = (i == pred_yearly.index[0])
+        fig2.add_trace(go.Scatter(
+            x=[row["annee"]], y=[row["tx"]],
+            name="Prediction max", mode="markers",
+            marker=dict(color=COLORS["warm"], size=14, symbol="star"),
+            showlegend=show,
         ))
-        fig.add_trace(go.Scatter(
-            x=[year], y=[tm],
-            name="Prediction", mode="markers",
-            marker=dict(color=COLORS["warm"], size=12, symbol="star"),
+        fig2.add_trace(go.Scatter(
+            x=[row["annee"]], y=[row["tm"]],
+            name="Prediction moy", mode="markers",
+            marker=dict(color=COLORS["amber"], size=14, symbol="star"),
+            showlegend=show,
         ))
-        fig.update_layout(
-            title=f"T° moyenne en {MOIS_NOMS[month]} - {dept_labels.get(dept, dept)}",
-            xaxis_title="Annee",
-            yaxis_title="Temperature (°C)",
-            template="plotly_white",
-            height=400,
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        fig2.add_trace(go.Scatter(
+            x=[row["annee"]], y=[row["tn"]],
+            name="Prediction min", mode="markers",
+            marker=dict(color=COLORS["cold"], size=14, symbol="star"),
+            showlegend=show,
+        ))
 
-st.divider()
-st.markdown("### Importer un modele ML")
-st.caption("Votre equipe data peut fournir un modele pickle (.pkl) entraine pour ameliorer les predictions.")
+    fig2.update_layout(
+        title=f"Evolution annuelle + predictions - {dept_labels.get(dept, dept)}",
+        xaxis_title="Annee", yaxis_title="Temperature (°C)",
+        template="plotly_white", height=450, hovermode="x unified",
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+else:
+    st.info("Pas de donnees historiques disponibles pour ce departement.")
 
-uploaded = st.file_uploader("Charger un modele (.pkl)", type=["pkl"])
-if uploaded:
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    with open(model_path, "wb") as f:
-        f.write(uploaded.read())
-    st.success("Modele importe avec succes ! Relancez une prediction.")
-    st.rerun()
+# --- Tableau recapitulatif ---
+st.markdown(f"### Detail mensuel {annee}")
+
+display_df = pred_monthly[["mois_nom", "tn", "tm", "tx"]].copy()
+display_df.columns = ["Mois", "T° min (°C)", "T° moy (°C)", "T° max (°C)"]
+
+st.dataframe(display_df, use_container_width=True, hide_index=True)
