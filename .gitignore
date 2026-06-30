@@ -1,32 +1,24 @@
-# Environnements Python
 .venv/
 venv/
 env/
 __pycache__/
+*.pyc
 *.py[cod]
 *.egg-info/
 dist/
 build/
-
-
-# Données volumineuses (ajuster selon le projet)
-notebook aurelie/export/meteo_france_mensuel_1950_2026.csv
-
-# Secrets
 .env
 .env.*
 *.pem
 credentials.json
-
-# IDE & OS
 .vscode/
 .idea/
 *.swp
 .DS_Store
 Thumbs.db
-
-# Jupyter
 .ipynb_checkpoints/
-
-# Logs
 *.log
+Data/
+models/
+*.ipynb
+ynov-hackathon-climatologie/
