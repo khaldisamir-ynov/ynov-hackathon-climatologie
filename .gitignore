@@ -10,10 +10,7 @@ build/
 
 
 # Données volumineuses (ajuster selon le projet)
-*.parquet
-*.xlsx
-data/raw/
-data/processed/
+notebook aurelie/export/meteo_france_mensuel_1950_2026.csv
 
 # Secrets
 .env
