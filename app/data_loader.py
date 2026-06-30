@@ -1,6 +1,16 @@
+import os
 import numpy as np
 import pandas as pd
+import psycopg2
 import streamlit as st
+
+DB_CONFIG = {
+    "host": os.environ.get("DB_HOST", "localhost"),
+    "port": os.environ.get("DB_PORT", "5432"),
+    "dbname": os.environ.get("DB_NAME", "climafrance"),
+    "user": os.environ.get("DB_USER", "clima"),
+    "password": os.environ.get("DB_PASSWORD", "clima123"),
+}
 
 DEPT_NAMES = {
     "01": "Ain", "02": "Aisne", "03": "Allier", "04": "Alpes-de-Haute-Provence",
@@ -94,20 +104,85 @@ DEPT_COORDS = {
     "93": (48.9, 2.5), "94": (48.8, 2.5), "95": (49.1, 2.2),
 }
 
+
+def get_db_connection():
+    try:
+        return psycopg2.connect(**DB_CONFIG)
+    except psycopg2.OperationalError:
+        return None
+
+
+@st.cache_data(show_spinner="Chargement des donnees historiques...", ttl=300)
+def load_historic_data():
+    conn = get_db_connection()
+    if conn is None:
+        return _generate_mock_data()
+
+    try:
+        df = pd.read_sql(
+            "SELECT num_poste, nom_usuel, lat, lon, alti, dept, annee, mois, tm, tx, tn, rr "
+            "FROM historic_weather",
+            conn,
+        )
+        conn.close()
+
+        if df.empty:
+            return _generate_mock_data()
+
+        df.columns = ["NUM_POSTE", "NOM_USUEL", "LAT", "LON", "ALTI", "DEPT", "ANNEE", "MOIS", "TM", "TX", "TN", "RR"]
+        df["DEPT"] = df["DEPT"].str.zfill(2)
+        df["DEPT_NOM"] = df["DEPT"].map(DEPT_NAMES).fillna("Inconnu")
+        df["REGION"] = df["DEPT"].map(DEPT_REGIONS).fillna("Autre")
+
+        for dept, (lat, lon) in DEPT_COORDS.items():
+            mask = (df["DEPT"] == dept) & (df["LAT"].isna())
+            df.loc[mask, "LAT"] = lat
+            df.loc[mask, "LON"] = lon
+
+        return df
+    except Exception as e:
+        if conn:
+            conn.close()
+        print(f"DB error: {e}")
+        return _generate_mock_data()
+
+
+@st.cache_data(show_spinner="Chargement des predictions...", ttl=300)
+def load_predictions():
+    conn = get_db_connection()
+    if conn is None:
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_sql("SELECT * FROM predictions_2026", conn)
+        conn.close()
+        if not df.empty:
+            df["dept"] = df["dept"].str.zfill(2)
+        return df
+    except Exception:
+        if conn:
+            conn.close()
+        return pd.DataFrame()
+
+
+def load_all_data():
+    return load_historic_data()
+
+
 MONTHLY_BASE_TEMP = {
     1: 3.5, 2: 4.5, 3: 8.0, 4: 11.0, 5: 15.0, 6: 18.5,
     7: 21.0, 8: 20.5, 9: 17.0, 10: 12.5, 11: 7.5, 12: 4.5,
 }
 
 
-@st.cache_data(show_spinner="Generation des donnees de test...")
-def load_all_data():
+def _generate_mock_data():
+    """Fallback mock data when database is not available."""
     rng = np.random.default_rng(42)
     rows = []
     for dept in DEPT_COORDS:
         lat, lon = DEPT_COORDS[dept]
         lat_factor = (lat - 43.0) / 7.0
-        station_name = f"STATION_{DEPT_NAMES[dept].upper().replace(' ', '_')[:12]}"
+        station_name = f"STATION_{DEPT_NAMES.get(dept, dept).upper().replace(' ', '_')[:12]}"
         num_poste = int(dept) * 100000 + 1
         for year in range(2000, 2027):
             for month in range(1, 13):
@@ -119,17 +194,11 @@ def load_all_data():
                 tn = round(tm - 5 + rng.normal(0, 0.8), 1)
                 rr = round(max(0, 40 + rng.normal(0, 25)), 1)
                 rows.append({
-                    "NUM_POSTE": num_poste,
-                    "NOM_USUEL": station_name,
-                    "LAT": lat,
-                    "LON": lon,
-                    "ALTI": int(100 + rng.integers(0, 500)),
-                    "AAAAMM": year * 100 + month,
+                    "NUM_POSTE": num_poste, "NOM_USUEL": station_name,
+                    "LAT": lat, "LON": lon, "ALTI": int(100 + rng.integers(0, 500)),
+                    "DEPT": dept, "ANNEE": year, "MOIS": month,
                     "TM": tm, "TX": tx, "TN": tn, "RR": rr,
-                    "DEPT": dept,
-                    "DEPT_NOM": DEPT_NAMES[dept],
+                    "DEPT_NOM": DEPT_NAMES.get(dept, "Inconnu"),
                     "REGION": DEPT_REGIONS.get(dept, "Autre"),
-                    "ANNEE": year,
-                    "MOIS": month,
                 })
     return pd.DataFrame(rows)
