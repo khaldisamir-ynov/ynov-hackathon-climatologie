@@ -1,16 +1,16 @@
 import streamlit as st
-import plotly.express as px
 import plotly.graph_objects as go
 import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from data_loader import load_all_data
+from style import inject_css, page_header, sidebar_brand, COLORS
 
 st.set_page_config(page_title="Graphiques - ClimaFrance", layout="wide", page_icon="📈")
-st.sidebar.title("🌡️ ClimaFrance")
+inject_css()
+sidebar_brand()
 
-st.markdown("## 📈 Evolution des temperatures")
-st.caption("Tendances historiques par departement")
+page_header("📈 Evolution des temperatures", "Tendances historiques par departement")
 
 data = load_all_data()
 if data.empty:
@@ -24,6 +24,7 @@ for d in dept_options:
     if len(rows) > 0:
         dept_labels[d] = f"{d} - {rows['DEPT_NOM'].iloc[0]}"
 
+st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
 col1, col2 = st.columns([1, 2])
 with col1:
     dept = st.selectbox(
@@ -36,6 +37,7 @@ with col2:
     min_year = int(data["ANNEE"].min())
     max_year = int(data["ANNEE"].max())
     periode = st.slider("Periode", min_value=min_year, max_value=max_year, value=(min_year, max_year))
+st.markdown('</div>', unsafe_allow_html=True)
 
 filtered = data[
     (data["DEPT"] == dept)
@@ -51,21 +53,29 @@ yearly = filtered.groupby("ANNEE").agg(
 ).reset_index()
 yearly = yearly.round(1)
 
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("T° moy sur la periode", f"{yearly['TM_moy'].mean():.1f}°C")
+with c2:
+    st.metric("T° max record", f"{yearly['TX_moy'].max():.1f}°C")
+with c3:
+    st.metric("T° min record", f"{yearly['TN_moy'].min():.1f}°C")
+
 fig = go.Figure()
 fig.add_trace(go.Scatter(
     x=yearly["ANNEE"], y=yearly["TX_moy"],
     name="T° max moyenne", mode="lines",
-    line=dict(color="#E24B4A", width=2),
+    line=dict(color=COLORS["warm"], width=2),
 ))
 fig.add_trace(go.Scatter(
     x=yearly["ANNEE"], y=yearly["TM_moy"],
     name="T° moyenne", mode="lines",
-    line=dict(color="#EF9F27", width=2),
+    line=dict(color=COLORS["amber"], width=2),
 ))
 fig.add_trace(go.Scatter(
     x=yearly["ANNEE"], y=yearly["TN_moy"],
     name="T° min moyenne", mode="lines",
-    line=dict(color="#378ADD", width=2),
+    line=dict(color=COLORS["cold"], width=2),
 ))
 fig.update_layout(
     title=f"Evolution annuelle - {dept_labels.get(dept, dept)}",
@@ -95,15 +105,15 @@ monthly["Mois_nom"] = monthly["MOIS"].map(MOIS_NOMS)
 fig2 = go.Figure()
 fig2.add_trace(go.Bar(
     x=monthly["Mois_nom"], y=monthly["TX_moy"],
-    name="T° max moy", marker_color="#E24B4A",
+    name="T° max moy", marker_color=COLORS["warm"],
 ))
 fig2.add_trace(go.Bar(
     x=monthly["Mois_nom"], y=monthly["TM_moy"],
-    name="T° moy", marker_color="#EF9F27",
+    name="T° moy", marker_color=COLORS["amber"],
 ))
 fig2.add_trace(go.Bar(
     x=monthly["Mois_nom"], y=monthly["TN_moy"],
-    name="T° min moy", marker_color="#378ADD",
+    name="T° min moy", marker_color=COLORS["cold"],
 ))
 fig2.update_layout(
     barmode="group",

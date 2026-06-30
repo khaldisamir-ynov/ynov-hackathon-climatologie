@@ -4,12 +4,13 @@ import sys, os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from data_loader import load_all_data, DEPT_REGIONS
+from style import inject_css, page_header, sidebar_brand, COLORS
 
 st.set_page_config(page_title="Tableau - ClimaFrance", layout="wide", page_icon="📊")
-st.sidebar.title("🌡️ ClimaFrance")
+inject_css()
+sidebar_brand()
 
-st.markdown("## 📊 Tableau des bornes")
-st.caption("Moyennes et predictions par station meteorologique")
+page_header("📊 Tableau des bornes", "Moyennes et predictions par station meteorologique")
 
 data = load_all_data()
 if data.empty:
@@ -17,6 +18,8 @@ if data.empty:
     st.stop()
 
 regions = sorted(data["REGION"].dropna().unique())
+
+st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -35,6 +38,7 @@ min_year = int(data["ANNEE"].min())
 max_year = int(data["ANNEE"].max())
 with col3:
     periode = st.slider("Periode", min_value=min_year, max_value=max_year, value=(max_year - 5, max_year))
+st.markdown('</div>', unsafe_allow_html=True)
 
 filtered = data[(data["ANNEE"] >= periode[0]) & (data["ANNEE"] <= periode[1])]
 if region != "Toutes":
@@ -71,7 +75,13 @@ display_df = stats[["DEPT", "DEPT_NOM", "NOM_USUEL", "TM_moy", "TX_max", "TN_min
 display_df.columns = ["Dept", "Departement", "Station", "T° moy (°C)", "T° max (°C)", "T° min (°C)", "Tendance (°C)", "Nb mois"]
 display_df = display_df.sort_values(["Dept", "Station"])
 
-st.metric("Stations", len(display_df))
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric("Stations", len(display_df))
+with c2:
+    st.metric("T° moy globale", f"{display_df['T° moy (°C)'].mean():.1f}°C")
+with c3:
+    st.metric("Periode", f"{periode[0]} - {periode[1]}")
 
 st.dataframe(
     display_df,

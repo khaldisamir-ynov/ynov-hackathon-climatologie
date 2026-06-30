@@ -104,11 +104,7 @@ MONTHLY_BASE_TEMP = {
 def load_all_data():
     rng = np.random.default_rng(42)
     rows = []
-    selected_depts = [
-        "01", "06", "13", "29", "31", "33", "34", "38", "44", "59",
-        "62", "67", "69", "75", "76", "83", "84", "85", "92", "93",
-    ]
-    for dept in selected_depts:
+    for dept in DEPT_COORDS:
         lat, lon = DEPT_COORDS[dept]
         lat_factor = (lat - 43.0) / 7.0
         station_name = f"STATION_{DEPT_NAMES[dept].upper().replace(' ', '_')[:12]}"

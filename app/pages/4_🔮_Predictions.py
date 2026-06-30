@@ -8,12 +8,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from data_loader import load_all_data
+from style import inject_css, page_header, sidebar_brand, COLORS
 
 st.set_page_config(page_title="Predictions - ClimaFrance", layout="wide", page_icon="🔮")
-st.sidebar.title("🌡️ ClimaFrance")
+inject_css()
+sidebar_brand()
 
-st.markdown("## 🔮 Predictions")
-st.caption("Prediction de temperature pour un departement et une date")
+page_header("🔮 Predictions", "Prediction de temperature pour un departement et une date")
 
 data = load_all_data()
 if data.empty:
@@ -31,6 +32,7 @@ for d in dept_options:
     if len(rows) > 0:
         dept_labels[d] = f"{d} - {rows['DEPT_NOM'].iloc[0]}"
 
+st.markdown('<div class="filter-bar">', unsafe_allow_html=True)
 col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
     dept = st.selectbox(
@@ -44,6 +46,7 @@ with col2:
 with col3:
     st.markdown("<br>", unsafe_allow_html=True)
     predict_btn = st.button("🔮 Predire", type="primary", use_container_width=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 
 def predict_with_historical(dept_code, year, month):
@@ -124,13 +127,13 @@ if predict_btn:
         fig.add_trace(go.Scatter(
             x=yearly["ANNEE"], y=yearly["TM"].round(1),
             name="Historique", mode="lines+markers",
-            line=dict(color="#378ADD", width=2),
+            line=dict(color=COLORS["cold"], width=2),
             marker=dict(size=3),
         ))
         fig.add_trace(go.Scatter(
             x=[year], y=[tm],
             name="Prediction", mode="markers",
-            marker=dict(color="#D85A30", size=12, symbol="star"),
+            marker=dict(color=COLORS["warm"], size=12, symbol="star"),
         ))
         fig.update_layout(
             title=f"T° moyenne en {MOIS_NOMS[month]} - {dept_labels.get(dept, dept)}",
